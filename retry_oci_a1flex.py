@@ -66,7 +66,8 @@ def write_output(**kwargs):
 
 def is_capacity_error(e: oci.exceptions.ServiceError) -> bool:
     msg = (e.message or "").lower()
-    return "out of capacity" in msg or "outofcapacity" in (e.code or "").lower()
+    code = (e.code or "").lower()
+    return "capacity" in msg or "capacity" in code
 
 
 def is_rate_limit_error(e: oci.exceptions.ServiceError) -> bool:
