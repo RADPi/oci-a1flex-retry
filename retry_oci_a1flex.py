@@ -88,19 +88,17 @@ def main() -> int:
     os_name = env("OCI_OS_NAME", default="Oracle Linux")
     os_version = env("OCI_OS_VERSION", default="9")
 
-    signer = oci.signer.Signer(
-        tenancy=tenancy_ocid,
-        user=user_ocid,
-        fingerprint=fingerprint,
-        private_key_file_location=None,
-        pass_phrase=None,
-        private_key_content=private_key,
-    )
-    config = {"region": region, "tenancy": tenancy_ocid}
+    config = {
+        "user": user_ocid,
+        "fingerprint": fingerprint,
+        "tenancy": tenancy_ocid,
+        "region": region,
+        "key_content": private_key,
+    }
 
-    identity = oci.identity.IdentityClient(config, signer=signer)
-    network = oci.core.VirtualNetworkClient(config, signer=signer)
-    compute = oci.core.ComputeClient(config, signer=signer)
+    identity = oci.identity.IdentityClient(config)
+    network = oci.core.VirtualNetworkClient(config)
+    compute = oci.core.ComputeClient(config)
 
     # Ya existe alguna instancia con este nombre? Si ya se creo con exito en
     # una corrida anterior, no insistir de nuevo.
