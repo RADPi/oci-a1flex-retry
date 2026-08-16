@@ -44,7 +44,7 @@ import sys
 import oci
 
 
-SHAPE_CONFIGS = [(2, 12), (1, 6)]  # (ocpus, memory_gb), en orden de intento
+SHAPE_CONFIGS = [(2, 12), (2, 10), (2, 8), (1, 12), (1, 10), (1, 8), (1, 6)]  # (ocpus, memory_gb), en orden de intento
 
 
 def env(name, default=None, required=False):
