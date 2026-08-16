@@ -1,0 +1,56 @@
+name: Retry OCI A1.Flex instance
+
+on:
+  schedule:
+    # Cada 15 minutos. Si el repo es privado y te preocupa el consumo de
+    # minutos gratis de Actions (2000 min/mes en el plan Free), cambialo a
+    # "*/30 * * * *" (cada 30 min) o "0 * * * *" (cada hora). Si el repo es
+    # publico, Actions es ilimitado y podes dejarlo en 15 o bajarlo a 10.
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: oci-a1flex-retry
+  cancel-in-progress: false
+
+jobs:
+  retry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar OCI SDK
+        run: pip install --quiet oci
+
+      - name: Intentar crear la instancia
+        id: attempt
+        env:
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+          OCI_SSH_PUBLIC_KEY: ${{ secrets.OCI_SSH_PUBLIC_KEY }}
+        run: python retry_oci_a1flex.py
+
+      - name: Avisar exito (issue + apagar el workflow)
+        if: steps.attempt.outputs.success == 'true' && steps.attempt.outputs.already_existed != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --title "Instancia SMARTket-a1flex creada" \
+            --body "Se creo la instancia Ampere A1 Flex exitosamente.
+
+          - Instance OCID: ${{ steps.attempt.outputs.instance_id }}
+          - Shape: VM.Standard.A1.Flex (${{ steps.attempt.outputs.shape_desc }})
+          - Corrida: ${{ github.run_id }}
+
+          Este workflow se deshabilito automaticamente para no seguir intentando. Podes volver a habilitarlo desde la pestana Actions si hace falta." \
+            --repo "${{ github.repository }}"
+          gh workflow disable "retry-a1flex.yml" --repo "${{ github.repository }}"
