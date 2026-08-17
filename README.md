@@ -1,21 +1,24 @@
 # Reintento automático — Oracle Cloud A1.Flex (Always Free)
 
-Este repo reintenta crear una instancia Ampere A1 Flex (Always Free) cada 15
-minutos usando GitHub Actions, llamando directamente a la API de OCI con una
-API signing key (no depende del navegador ni de la sesión de la consola).
+Este repo reintenta crear una instancia Ampere A1 Flex (Always Free) cada 5
+minutos (el intervalo mínimo que permite GitHub Actions para workflows
+programados) usando GitHub Actions, llamando directamente a la API de OCI
+con una API signing key (no depende del navegador ni de la sesión de la
+consola).
 
 Prueba, en orden, varias combinaciones de OCPU/memoria (configurables en
 `retry_oci_a1flex.py`); si Oracle devuelve "Out of capacity" en todas, la
 corrida termina normal (no en rojo) y GitHub Actions la vuelve a intentar en
-15 minutos. Cuando alguna funciona, crea un Issue en este repo avisando y se
+5 minutos. Cuando alguna funciona, crea un Issue en este repo avisando y se
 autodeshabilita para no seguir corriendo.
 
 Todos los identificadores de tu cuenta (OCIDs, región, nombre de la VCN, de
 la subnet, de la instancia) se cargan como GitHub Secrets — el código de este
 repo no contiene ningún dato identificable de una cuenta OCI en particular,
 así que podés tenerlo en un repo público sin exponer nada más allá de "existe
-esta automatización" (útil si querés minutos de Actions ilimitados en vez del
-tope de 2000 min/mes del plan Free en repos privados).
+esta automatización" (útil porque en un repo público los minutos de Actions
+son ilimitados, en vez del tope de 2000 min/mes del plan Free en repos
+privados).
 
 ## Por qué no lo subió Claude directamente
 
@@ -73,7 +76,7 @@ de los secrets en GitHub la tenés que hacer vos.
 
 En cuanto guardes los 9 secrets, andá a la pestaña **Actions** del repo y
 activá el workflow si te lo pide ("I understand my workflows, go ahead and
-enable them"). A partir de ahí corre solo cada 15 minutos.
+enable them"). A partir de ahí corre solo cada 5 minutos.
 
 Podés ver el progreso en Actions → "Retry OCI A1.Flex instance" → cada
 corrida muestra en los logs si encontró capacidad o no. Cuando tenga éxito,
@@ -82,11 +85,18 @@ automáticamente (si tenés notificaciones activadas para este repo).
 
 ## Notas
 
-- **Consumo de minutos:** con repo privado y cron cada 15 min, esto usa
-  aproximadamente 1400–1900 min/mes de los 2000 gratis del plan Free. Si
-  querés más margen sin cambiar la visibilidad, cambiá `*/15 * * * *` por
-  `*/30 * * * *` o `0 * * * *` en `.github/workflows/retry-a1flex.yml`. Con
-  repo público, Actions es ilimitado y no hace falta tocar el cron.
+- **Consumo de minutos:** con el repo público, Actions es ilimitado, así que
+  el cron está en `*/5 * * * *` (el mínimo que admite GitHub — no se puede
+  programar más seguido que cada 5 min). Si en algún momento volvés a un repo
+  privado, cambiá esa línea en `.github/workflows/retry-a1flex.yml` a
+  `*/15 * * * *` o `*/30 * * * *` para no comerte los 2000 min/mes gratis del
+  plan Free.
+- **¿Vale la pena ir más seguido?** GitHub no permite bajar de 5 min. Además,
+  la API de OCI tiene su propio rate limiting para desalentar el polling
+  agresivo (el script lo maneja solo, ver `is_rate_limit_error`), y cuando se
+  abre una ventana de capacidad libre normalmente la agarran otros scripts
+  automatizados corriendo en paralelo en cuestión de segundos — así que la
+  frecuencia ayuda un poco pero no es determinante.
 - **Secrets y logs:** GitHub oculta los Secrets en la interfaz y redacta
   automáticamente cualquier substring que coincida con un Secret configurado
   en los logs de las corridas, aunque el script no lo imprima a propósito
