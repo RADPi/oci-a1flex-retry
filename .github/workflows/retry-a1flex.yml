@@ -36,6 +36,9 @@ jobs:
           OCI_REGION: ${{ secrets.OCI_REGION }}
           OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
           OCI_SSH_PUBLIC_KEY: ${{ secrets.OCI_SSH_PUBLIC_KEY }}
+          OCI_VCN_NAME: ${{ secrets.OCI_VCN_NAME }}
+          OCI_SUBNET_NAME: ${{ secrets.OCI_SUBNET_NAME }}
+          OCI_INSTANCE_NAME: ${{ secrets.OCI_INSTANCE_NAME }}
         run: python retry_oci_a1flex.py
 
       - name: Avisar exito (issue + apagar el workflow)
@@ -44,8 +47,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh issue create \
-            --title "Instancia SMARTket-a1flex creada" \
-            --body "Se creo la instancia Ampere A1 Flex exitosamente.
+            --title "Instancia ${{ steps.attempt.outputs.instance_name }} creada" \
+            --body "Se creo la instancia '${{ steps.attempt.outputs.instance_name }}' (Ampere A1 Flex) exitosamente.
 
           - Instance OCID: ${{ steps.attempt.outputs.instance_id }}
           - Shape: VM.Standard.A1.Flex (${{ steps.attempt.outputs.shape_desc }})
