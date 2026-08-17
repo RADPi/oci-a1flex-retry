@@ -17,14 +17,21 @@ Variables de entorno requeridas:
   OCI_PRIVATE_KEY        Contenido COMPLETO del archivo .pem de la API key
                           (incluyendo -----BEGIN/END PRIVATE KEY-----)
   OCI_SSH_PUBLIC_KEY     Clave publica SSH a inyectar en la instancia
+  OCI_VCN_NAME           Nombre de tu VCN en OCI
+  OCI_SUBNET_NAME        Nombre de tu subnet en OCI
+  OCI_INSTANCE_NAME      Nombre que va a tener la instancia a crear
 
 Variables de entorno opcionales:
   OCI_COMPARTMENT_ID    Por defecto: el tenancy (compartment raiz)
-  OCI_VCN_NAME           Por defecto: "radp71-vcn"
-  OCI_SUBNET_NAME        Por defecto: "radp71-subnet"
-  OCI_INSTANCE_NAME      Por defecto: "SMARTket-a1flex"
   OCI_OS_NAME            Por defecto: "Oracle Linux"
   OCI_OS_VERSION         Por defecto: "9"
+
+Nota: todos los identificadores (VCN, subnet, nombre de instancia) se piden
+por variable de entorno a proposito, sin ningun valor por defecto real, para
+que el codigo de este repo no contenga ningun dato identificable de una
+cuenta OCI en particular - asi se puede tener este repo en un GitHub publico
+sin exponer nada mas alla de "existe una automatizacion", que no compromete
+la cuenta.
 
 Comportamiento:
   - Prueba, en orden, las configuraciones de shape en SHAPE_CONFIGS
@@ -82,10 +89,11 @@ def main() -> int:
     private_key = env("OCI_PRIVATE_KEY", required=True)
     ssh_public_key = env("OCI_SSH_PUBLIC_KEY", required=True)
 
+    vcn_name = env("OCI_VCN_NAME", required=True)
+    subnet_name = env("OCI_SUBNET_NAME", required=True)
+    instance_name = env("OCI_INSTANCE_NAME", required=True)
+
     compartment_id = env("OCI_COMPARTMENT_ID", default=tenancy_ocid)
-    vcn_name = env("OCI_VCN_NAME", default="radp71-vcn")
-    subnet_name = env("OCI_SUBNET_NAME", default="radp71-subnet")
-    instance_name = env("OCI_INSTANCE_NAME", default="SMARTket-a1flex")
     os_name = env("OCI_OS_NAME", default="Oracle Linux")
     os_version = env("OCI_OS_VERSION", default="9")
 
@@ -110,7 +118,7 @@ def main() -> int:
     if active:
         inst = active[0]
         print(f"Ya existe una instancia '{instance_name}' ({inst.id}) en estado {inst.lifecycle_state}. Nada para hacer.")
-        write_output(success="true", instance_id=inst.id, shape_desc="ya existente", already_existed="true")
+        write_output(success="true", instance_id=inst.id, shape_desc="ya existente", already_existed="true", instance_name=instance_name)
         return 0
 
     ads = identity.list_availability_domains(compartment_id=compartment_id).data
@@ -172,7 +180,7 @@ def main() -> int:
             shape_desc = f"{ocpus} OCPU / {mem_gb} GB"
             print(f"EXITO: instancia creada ({shape_desc}): {instance_id}")
             print(f"::notice::Instancia '{instance_name}' creada ({shape_desc}): {instance_id}")
-            write_output(success="true", instance_id=instance_id, shape_desc=shape_desc, already_existed="false")
+            write_output(success="true", instance_id=instance_id, shape_desc=shape_desc, already_existed="false", instance_name=instance_name)
             return 0
         except oci.exceptions.ServiceError as e:
             if is_capacity_error(e):
