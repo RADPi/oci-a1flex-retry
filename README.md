@@ -1,15 +1,17 @@
 # Reintento automático — Oracle Cloud A1.Flex (Always Free)
 
-Este repo reintenta crear una instancia Ampere A1 Flex (Always Free) cada 5
-minutos (el intervalo mínimo que permite GitHub Actions para workflows
-programados) usando GitHub Actions, llamando directamente a la API de OCI
-con una API signing key (no depende del navegador ni de la sesión de la
-consola).
+Este repo reintenta crear una instancia Ampere A1 Flex (Always Free, 2 OCPU /
+12 GB — el máximo del pool) cada 10 minutos usando GitHub Actions, llamando
+directamente a la API de OCI con una API signing key (no depende del
+navegador ni de la sesión de la consola).
 
-Prueba, en orden, varias combinaciones de OCPU/memoria (configurables en
-`retry_oci_a1flex.py`); si Oracle devuelve "Out of capacity" en todas, la
-corrida termina normal (no en rojo) y GitHub Actions la vuelve a intentar en
-5 minutos. Cuando alguna funciona, crea un Issue en este repo avisando y se
+Dentro de cada corrida no prueba una sola vez: si Oracle devuelve "Out of
+capacity", espera unos segundos y reintenta, varias veces seguidas, hasta
+agotar el presupuesto de tiempo de esa corrida (configurable en
+`retry_oci_a1flex.py`, por defecto ~4 minutos con 15s entre intentos, o sea
+unos 16 intentos por corrida). Si ninguno consigue capacidad, la corrida
+termina normal (no en rojo) y GitHub Actions la vuelve a disparar 10 minutos
+después. Cuando alguno funciona, crea un Issue en este repo avisando y se
 autodeshabilita para no seguir corriendo.
 
 Todos los identificadores de tu cuenta (OCIDs, región, nombre de la VCN, de
@@ -76,7 +78,8 @@ de los secrets en GitHub la tenés que hacer vos.
 
 En cuanto guardes los 9 secrets, andá a la pestaña **Actions** del repo y
 activá el workflow si te lo pide ("I understand my workflows, go ahead and
-enable them"). A partir de ahí corre solo cada 5 minutos.
+enable them"). A partir de ahí corre solo cada 10 minutos (y dentro de cada
+corrida reintenta varias veces, ver más arriba).
 
 Podés ver el progreso en Actions → "Retry OCI A1.Flex instance" → cada
 corrida muestra en los logs si encontró capacidad o no. Cuando tenga éxito,
@@ -86,17 +89,24 @@ automáticamente (si tenés notificaciones activadas para este repo).
 ## Notas
 
 - **Consumo de minutos:** con el repo público, Actions es ilimitado, así que
-  el cron está en `*/5 * * * *` (el mínimo que admite GitHub — no se puede
-  programar más seguido que cada 5 min). Si en algún momento volvés a un repo
-  privado, cambiá esa línea en `.github/workflows/retry-a1flex.yml` a
-  `*/15 * * * *` o `*/30 * * * *` para no comerte los 2000 min/mes gratis del
-  plan Free.
-- **¿Vale la pena ir más seguido?** GitHub no permite bajar de 5 min. Además,
-  la API de OCI tiene su propio rate limiting para desalentar el polling
-  agresivo (el script lo maneja solo, ver `is_rate_limit_error`), y cuando se
-  abre una ventana de capacidad libre normalmente la agarran otros scripts
-  automatizados corriendo en paralelo en cuestión de segundos — así que la
-  frecuencia ayuda un poco pero no es determinante.
+  no hay problema en que cada corrida tarde varios minutos reintentando. Si
+  en algún momento volvés a un repo privado, cada corrida consume ~4-5
+  minutos de los 2000 gratis del plan Free (a cron cada 10 min, son
+  ~24-30 min/hora, bastante más que antes) — en ese caso conviene subir el
+  cron a `*/20 * * * *` o `*/30 * * * *` en
+  `.github/workflows/retry-a1flex.yml`, o bajar `MAX_RUN_SECONDS` en
+  `retry_oci_a1flex.py`.
+- **¿Vale la pena ir más seguido?** GitHub no permite programar corridas de
+  `schedule` más seguido que cada 5 min, pero eso ya no es el límite real:
+  ahora cada corrida reintenta internamente cada `RETRY_DELAY_SECONDS`
+  (15s por defecto) durante `MAX_RUN_SECONDS` (240s por defecto), así que en
+  la práctica se hacen ~16 intentos por corrida en vez de 1. Bajar el delay
+  entre intentos tiene un límite propio: la API de OCI tiene su propio rate
+  limiting para desalentar el polling agresivo (el script lo maneja solo,
+  ver `is_rate_limit_error`, con backoff cuando pasa), y cuando se abre una
+  ventana de capacidad libre normalmente la agarran otros scripts
+  automatizados corriendo en paralelo en cuestión de segundos — así que ir
+  más seguido ayuda un poco pero no es determinante.
 - **Secrets y logs:** GitHub oculta los Secrets en la interfaz y redacta
   automáticamente cualquier substring que coincida con un Secret configurado
   en los logs de las corridas, aunque el script no lo imprima a propósito
@@ -107,11 +117,13 @@ automáticamente (si tenés notificaciones activadas para este repo).
   programados si el repositorio no tiene ningún commit en 60 días. Si pasa
   mucho tiempo sin que se libere capacidad, puede que tengas que
   re-habilitarlo manualmente desde Actions (o hacer un commit cualquiera).
-- **Cambiar de shape/config:** la lista de combinaciones OCPU/GB a probar
-  está en `SHAPE_CONFIGS`, al principio de `retry_oci_a1flex.py`. El resto
-  de los ajustes (VCN, subnet, nombre de instancia, SO) son todos variables
-  de entorno — no hace falta tocar código para cambiarlos, solo el valor del
-  Secret correspondiente.
+- **Cambiar de shape/config:** la combinación OCPU/GB a probar está en
+  `SHAPE_CONFIG`, al principio de `retry_oci_a1flex.py` (por defecto 2 OCPU
+  / 12 GB, el máximo del pool Always Free de A1.Flex — no tiene sentido
+  pedir menos si de todos modos hay que esperar a que se libere capacidad).
+  El resto de los ajustes (VCN, subnet, nombre de instancia, SO) son todos
+  variables de entorno — no hace falta tocar código para cambiarlos, solo el
+  valor del Secret correspondiente.
 - **Revocar el acceso:** si en algún momento querés cortar el acceso de esta
   automatización a tu cuenta OCI, andá a OCI Console → tu perfil → Tokens and
   keys → API keys, y borrá la key con el fingerprint que cargaste en
