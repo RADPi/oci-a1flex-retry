@@ -2,13 +2,15 @@ name: Retry OCI A1.Flex instance
 
 on:
   schedule:
-    # Cada 5 minutos - el intervalo minimo que permite GitHub Actions para
-    # workflows programados (schedule no admite nada mas frecuente). Repo
-    # publico = minutos de Actions ilimitados, asi que no hay motivo para
-    # espaciarlo mas. Igual esta sujeto al rate limiting propio de la API
-    # de OCI (el script ya lo maneja via is_rate_limit_error) y a que
-    # GitHub puede demorar o saltear corridas programadas bajo carga alta.
-    - cron: '*/5 * * * *'
+    # Cada 10 minutos. El script ya no prueba una sola vez y corta: dentro
+    # de cada corrida reintenta varias veces con una pausa entre intentos
+    # (ver RETRY_DELAY_SECONDS / MAX_RUN_SECONDS en retry_oci_a1flex.py),
+    # asi que en los ~4 minutos que dura cada corrida ya hace unos 16
+    # intentos. Espaciar las corridas a 10 minutos evita solapar jobs
+    # (concurrency de abajo los harian esperar en cola igual) y le da mas
+    # margen al rate limiting propio de la API de OCI. Repo publico =
+    # minutos de Actions ilimitados, asi que esto no consume cuota.
+    - cron: '*/10 * * * *'
   workflow_dispatch: {}
 
 concurrency:
@@ -18,7 +20,7 @@ concurrency:
 jobs:
   retry:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
 
