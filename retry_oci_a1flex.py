@@ -34,10 +34,15 @@ sin exponer nada mas alla de "existe una automatizacion", que no compromete
 la cuenta.
 
 Comportamiento:
-  - Prueba, en orden, las configuraciones de shape en SHAPE_CONFIGS
-    (2 OCPU/12GB y despues 1 OCPU/6GB) contra VM.Standard.A1.Flex.
-  - Si todas fallan con "Out of capacity", termina con exit code 0
-    (no es un error real, solo no habia capacidad en este intento).
+  - Intenta crear la instancia con SHAPE_CONFIG (2 OCPU / 12 GB, el maximo
+    del pool Always Free de A1.Flex) contra VM.Standard.A1.Flex.
+  - Si Oracle devuelve "Out of capacity", no corta ahi: espera
+    RETRY_DELAY_SECONDS y reintenta, varias veces dentro de la misma
+    corrida, hasta agotar el presupuesto de tiempo MAX_RUN_SECONDS (se deja
+    margen frente al timeout-minutes del job de GitHub Actions). Asi cada
+    corrida programada hace varios intentos seguidos en vez de uno solo.
+  - Si se agota el tiempo sin conseguir capacidad, termina con exit code 0
+    (no es un error real) y queda esperando a la proxima corrida programada.
   - Si hay un error inesperado (cuota, permisos, config mal armada),
     termina con exit code 1 para que el run de GitHub Actions se marque
     como fallido y el usuario reciba la notificacion de GitHub.
@@ -47,11 +52,15 @@ Comportamiento:
 
 import os
 import sys
+import time
 
 import oci
 
 
-SHAPE_CONFIGS = [(2, 12), (2, 10), (2, 8), (1, 12), (1, 10), (1, 8), (1, 6)]  # (ocpus, memory_gb), en orden de intento
+SHAPE_CONFIG = (2, 12)  # (ocpus, memory_gb) - el maximo del pool Always Free de A1.Flex
+
+RETRY_DELAY_SECONDS = 15  # pausa entre intentos dentro de la misma corrida
+MAX_RUN_SECONDS = 240  # tiempo maximo reintentando en esta corrida (deja margen al timeout-minutes del job)
 
 
 def env(name, default=None, required=False):
@@ -157,45 +166,57 @@ def main() -> int:
     image = images[0]
     print(f"Imagen: {image.display_name} ({image.id})")
 
+    ocpus, mem_gb = SHAPE_CONFIG
+    shape_desc = f"{ocpus} OCPU / {mem_gb} GB"
+    details = oci.core.models.LaunchInstanceDetails(
+        compartment_id=compartment_id,
+        availability_domain=availability_domain,
+        shape="VM.Standard.A1.Flex",
+        display_name=instance_name,
+        shape_config=oci.core.models.LaunchInstanceShapeConfigDetails(
+            ocpus=ocpus, memory_in_gbs=mem_gb
+        ),
+        create_vnic_details=oci.core.models.CreateVnicDetails(
+            subnet_id=subnet_id, assign_public_ip=True
+        ),
+        source_details=oci.core.models.InstanceSourceViaImageDetails(image_id=image.id),
+        metadata={"ssh_authorized_keys": ssh_public_key},
+    )
+
+    start = time.monotonic()
+    attempt = 0
     last_error = None
-    for ocpus, mem_gb in SHAPE_CONFIGS:
-        print(f"Intentando lanzar instancia con {ocpus} OCPU / {mem_gb} GB ...")
-        details = oci.core.models.LaunchInstanceDetails(
-            compartment_id=compartment_id,
-            availability_domain=availability_domain,
-            shape="VM.Standard.A1.Flex",
-            display_name=instance_name,
-            shape_config=oci.core.models.LaunchInstanceShapeConfigDetails(
-                ocpus=ocpus, memory_in_gbs=mem_gb
-            ),
-            create_vnic_details=oci.core.models.CreateVnicDetails(
-                subnet_id=subnet_id, assign_public_ip=True
-            ),
-            source_details=oci.core.models.InstanceSourceViaImageDetails(image_id=image.id),
-            metadata={"ssh_authorized_keys": ssh_public_key},
-        )
+    while True:
+        elapsed = time.monotonic() - start
+        if elapsed > MAX_RUN_SECONDS:
+            print(f"Se agoto el tiempo de esta corrida ({attempt} intento(s) en {int(elapsed)}s). Sigue en la proxima corrida programada.")
+            break
+        attempt += 1
+        print(f"Intento {attempt} (t+{int(elapsed)}s): lanzando instancia con {shape_desc} ...")
         try:
             resp = compute.launch_instance(details)
             instance_id = resp.data.id
-            shape_desc = f"{ocpus} OCPU / {mem_gb} GB"
             print(f"EXITO: instancia creada ({shape_desc}): {instance_id}")
             print(f"::notice::Instancia '{instance_name}' creada ({shape_desc}): {instance_id}")
             write_output(success="true", instance_id=instance_id, shape_desc=shape_desc, already_existed="false", instance_name=instance_name)
             return 0
         except oci.exceptions.ServiceError as e:
             if is_capacity_error(e):
-                print(f"  -> Out of capacity con {ocpus} OCPU/{mem_gb}GB. Sigo con la proxima config.")
+                print(f"  -> Out of capacity. Reintento en {RETRY_DELAY_SECONDS}s.")
                 last_error = e
+                time.sleep(RETRY_DELAY_SECONDS)
                 continue
             if is_rate_limit_error(e):
-                print(f"  -> Rate limited por la API (429). Se reintenta en la proxima corrida programada.")
-                write_output(success="false")
-                return 0
+                backoff = RETRY_DELAY_SECONDS * 2
+                print(f"  -> Rate limited por la API (429). Espero {backoff}s antes de reintentar.")
+                last_error = e
+                time.sleep(backoff)
+                continue
             # Error real (cuota, permisos, config invalida, etc.) -> no tiene sentido seguir reintentando ciegamente
             print(f"ERROR inesperado: status={e.status} code={e.code} message={e.message}", file=sys.stderr)
             return 1
 
-    print("Sin capacidad disponible para ninguna configuracion de shape en esta corrida.")
+    print(f"Sin capacidad disponible para {shape_desc} en esta corrida ({attempt} intento(s)).")
     if last_error is not None:
         print(f"(ultimo mensaje de OCI: {last_error.message})")
     write_output(success="false")
